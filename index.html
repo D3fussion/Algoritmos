@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero K-Means Dinámico</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-stone-50 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-8">
+        <div class="text-center my-5">
+            <h1 class="text-4xl font-bold text-neutral">Análisis de Combinaciones K-Means</h1>
+            <p class="py-2 text-base-content/70">Sube tu dataset para encontrar el mejor par de atributos.</p>
+        </div>
+
+        <div class="card bg-base-100 shadow border border-stone-200">
+            <div class="card-body">
+                <div class="flex flex-col md:flex-row gap-6 items-end">
+                    <div class="form-control w-full max-w-sm">
+                        <label class="label"><span class="label-text">Archivo de Datos (.csv, .txt)</span></label>
+                        <input type="file" id="fileInput" class="file-input file-input-bordered w-full"
+                            accept=".csv, .txt, .data" />
+                    </div>
+                    <div class="form-control w-full max-w-xs">
+                        <label class="label"><span class="label-text">Intentos (n_init)</span></label>
+                        <input type="number" id="nInitInput" class="input input-bordered w-full" value="5" min="1"
+                            max="20" />
+                    </div>
+                    <button class="btn btn-neutral" onclick="procesarDatos()">
+                        <span id="btnText">Analizar Combinaciones</span>
+                        <span id="loadingSpinner" class="loading loading-spinner loading-sm hidden"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="hidden space-y-8">
+
+            <div class="stats shadow w-full bg-white border border-stone-200">
+                <div class="stat">
+                    <div class="stat-title">Mejor Precisión Encontrada</div>
+                    <div class="stat-value text-primary" id="bestAcc">0%</div>
+                    <div class="stat-desc" id="bestPairName">Par: -</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Total Muestras</div>
+                    <div class="stat-value text-secondary" id="totalSamples">0</div>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Ranking de Pares (Features)</h2>
+                <div id="chartsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                </div>
+            </div>
+
+            <div class="card bg-base-100 shadow border border-stone-200">
+                <div class="card-body">
+                    <h2 class="card-title">Detalle de Predicciones (Mejor Modelo)</h2>
+                    <div class="overflow-x-auto h-96">
+                        <table class="table table-zebra table-pin-rows table-xs">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Features (Todas)</th>
+                                    <th>Clase Real</th>
+                                    <th>Predicción</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template id="cardGrafica">
+        <div class="card bg-base-100 shadow border border-stone-200 overflow-hidden">
+            <div class="card-body p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="card-title text-sm font-bold titulo"></h2>
+                    <div class="badge badge-lg presicion"></div>
+                </div>
+                <div class="w-full h-fit">
+                    <canvas class="grafica"></canvas>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+
+        function generarColores(numeroDeColores) {
+            const colores = [];
+            for (let i = 0; i < numeroDeColores; i++) {
+                const hue = Math.floor(Math.random() * 360);
+                const saturation = Math.floor(Math.random() * 30) + 70;
+                const lightness = Math.floor(Math.random() * 20) + 30;
+                colores.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+            }
+            return colores;
+        }
+
+        async function procesarDatos() {
+            const fileInput = document.getElementById('fileInput');
+            const nInitInput = document.getElementById('nInitInput');
+            const spinner = document.getElementById('loadingSpinner');
+            const resultsSection = document.getElementById('resultsSection');
+            const chartsContainer = document.getElementById('chartsContainer');
+
+            if (fileInput.files.length === 0) { alert("Selecciona un archivo"); return; }
+
+            spinner.classList.remove('hidden');
+            chartsContainer.innerHTML = '';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('n_init', nInitInput.value);
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/upload-kmeans', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                resultsSection.classList.remove('hidden');
+
+                const bestResult = data.ranking[0];
+                document.getElementById('bestAcc').innerText = (bestResult.precision * 100).toFixed(1) + "%";
+                document.getElementById('bestPairName').innerText = `Cols: ${bestResult.indices_features[0] + 1} vs ${bestResult.indices_features[1] + 1}`;
+                document.getElementById('totalSamples').innerText = data.total_samples;
+
+                const colores = generarColores(data.ranking[0].clases_unicas);
+
+                console.log(colores);
+
+                data.ranking.forEach((res, index) => {
+                    crearTarjetaGrafica(res, index, data.table_data, data.ranking, data.ranking[0].clases_unicas, colores);
+                });
+
+                renderTable(data.table_data);
+
+            } catch (error) {
+                alert("Error: " + error.message);
+                console.error(error);
+            } finally {
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function dividirPuntosPorClase(featureIdx1, featureIdx2, allData, ranking, clasesUnicas, colores) {
+            let clusters = {};
+
+            allData.forEach((punto, index) => {
+                let clusterId = ranking.asignaciones[index];
+
+                clusters[clusterId] = clusters[clusterId] || [];
+                clusters[clusterId].push({
+                    x: punto.features[featureIdx1],
+                    y: punto.features[featureIdx2],
+                });
+            });
+
+            let datasets = [];
+
+            Object.keys(clusters).forEach((clusterId) => {
+                datasets.push({
+                    label: `Cluster ${clusterId}`,
+                    data: clusters[clusterId],
+                    backgroundColor: colores[clusterId],
+                    pointRadius: 4
+                });
+            });
+
+            let centroidesFormateados = ranking.centroides.map(c => ({
+                x: c[0],
+                y: c[1]
+            }));
+
+            datasets.push({
+                label: "Centroides",
+                data: centroidesFormateados,
+                backgroundColor: "#000000",
+                pointStyle: 'crossRot',
+                pointRadius: 6,
+            });
+
+            return datasets;
+        }
+
+        function crearTarjetaGrafica(resultado, index, allData, ranking, clasesUnicas, colores) {
+            const container = document.getElementById('chartsContainer');
+            const template = document.getElementById('cardGrafica').content.cloneNode(true);
+
+            const featureIdx1 = resultado.indices_features[0];
+            const featureIdx2 = resultado.indices_features[1];
+
+            template.querySelector('.titulo').innerText = `#${index + 1} - Cols (${featureIdx1 + 1}, ${featureIdx2 + 1})`;
+            template.querySelector('.presicion').innerText = `Acc: ${(resultado.precision * 100).toFixed(1)}%`;
+            const ctx = template.querySelector('.grafica');
+
+            console.log(ranking[index]);
+
+            const puntos = dividirPuntosPorClase(featureIdx1, featureIdx2, allData, ranking[index], clasesUnicas, colores);
+
+            container.appendChild(template);
+
+            new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: puntos
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+
+
+        }
+
+        function renderTable(dataSet) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            dataSet.forEach((row, index) => {
+                const isCorrect = row['class'] === row['prediccion_kmeans'];
+                const badge = isCorrect
+                    ? '<span class="badge badge-success badge-xs text-white">OK</span>'
+                    : '<span class="badge badge-error badge-xs text-white">X</span>';
+
+                const tr = `
+                    <tr>
+                        <th>${index + 1}</th>
+                        <td class="font-mono text-xs">[${row.features.join(', ')}]</td>
+                        <td>${row['class']}</td>
+                        <td class="font-bold ${isCorrect ? 'text-success' : 'text-error'}">${row['prediccion_kmeans']}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+        }
+    </script>
+</body>
+
+</html>
