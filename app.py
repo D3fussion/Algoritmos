@@ -1,163 +1,285 @@
-import math
 import random
-from flask import Flask, request, jsonify
+import itertools
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+
+
+def inicializar_centroides(puntos, k):
+    centroides = [random.choice(puntos)]
+
+    while len(centroides) < k:
+        distancias_cuadradas = []
+
+        for punto in puntos:
+            dist_a_centroides = [
+                sum((punto[dim] - c[dim]) ** 2 for dim in range(len(punto)))
+                for c in centroides
+            ]
+            distancias_cuadradas.append(min(dist_a_centroides))
+
+        suma_distancias = sum(distancias_cuadradas)
+
+        if suma_distancias == 0:
+            centroides.append(random.choice(puntos))
+            continue
+
+        valor_aleatorio = random.uniform(0, suma_distancias)
+        sumas_acumuladas = list(itertools.accumulate(distancias_cuadradas))
+
+        for i, punto in enumerate(puntos):
+            if sumas_acumuladas[i] >= valor_aleatorio:
+                if punto not in centroides:
+                    centroides.append(punto)
+                break
+
+    return [c[:] for c in centroides]
+
+
+def dividir_lista_en_pares(lista):
+    if not lista:
+        return [], []
+
+    num_elementos = len(lista[0])
+    indices = list(itertools.combinations(range(num_elementos), 2))
+
+    pares = [[[fila[i], fila[j]] for fila in lista] for i, j in indices]
+
+    return pares, indices
+
+
+def dividir_en_valor(lista):
+    diccionario_tabla = dict()
+    pares_ordenados = sorted((valor, indice) for indice, valor in enumerate(lista))
+
+    for valor, grupo in itertools.groupby(pares_ordenados, key=lambda x: x[0]):
+        diccionario_tabla[valor] = [item[1] for item in grupo]
+
+    return diccionario_tabla
+
+
+def sacar_distancias(puntos, centroides):
+    tabla_de_puntos = []
+    for punto in puntos:
+        indice_mas_cercano = min(
+            range(len(centroides)),
+            key=lambda i: (
+                (centroides[i][0] - punto[0]) ** 2 + (centroides[i][1] - punto[1]) ** 2
+            ),
+        )
+        tabla_de_puntos.append(indice_mas_cercano)
+    return tabla_de_puntos
+
+
+def calcular_centros(puntos, diccionario_tabla, k):
+    centroides = {}
+    for key, value in diccionario_tabla.items():
+        sumatoria_x = 0
+        sumatoria_y = 0
+        for i in value:
+            sumatoria_x += puntos[i][0]
+            sumatoria_y += puntos[i][1]
+
+        centroide_x = sumatoria_x / len(value)
+        centroide_y = sumatoria_y / len(value)
+        centroides[key] = [centroide_x, centroide_y]
+
+    if len(centroides) < k:
+        for i in range(k):
+            if i not in centroides:
+                centroides[i] = list(random.choice(puntos))
+
+    return centroides
+
+
+def evaluar_rendimiento(asignaciones, clases_reales):
+    clases_unicas = sorted(list(set(clases_reales)))
+    clusters_encontrados = sorted(list(set(asignaciones)))
+
+    mejor_mapeo = {}
+    max_coincidencias = -1
+
+    if len(clusters_encontrados) < len(clases_unicas):
+        faltantes = set(range(len(clases_unicas))) - set(clusters_encontrados)
+        clusters_encontrados.extend(list(faltantes))
+
+    for permutacion in itertools.permutations(clases_unicas):
+        mapeo = dict(zip(clusters_encontrados, permutacion))
+        coincidencias = sum(
+            1
+            for asignado, real in zip(asignaciones, clases_reales)
+            if mapeo.get(asignado) == real
+        )
+        if coincidencias > max_coincidencias:
+            max_coincidencias = coincidencias
+            mejor_mapeo = mapeo
+
+    asignaciones_traducidas = [mejor_mapeo.get(a, -1) for a in asignaciones]
+
+    metricas_por_clase = {}
+    for clase in clases_unicas:
+        TP = sum(
+            1
+            for a, r in zip(asignaciones_traducidas, clases_reales)
+            if a == clase and r == clase
+        )
+        FP = sum(
+            1
+            for a, r in zip(asignaciones_traducidas, clases_reales)
+            if a == clase and r != clase
+        )
+        FN = sum(
+            1
+            for a, r in zip(asignaciones_traducidas, clases_reales)
+            if a != clase and r == clase
+        )
+
+        precision_clase = TP / (TP + FP) if (TP + FP) > 0 else 0
+        recall_clase = TP / (TP + FN) if (TP + FN) > 0 else 0
+        f1_clase = (
+            2 * (precision_clase * recall_clase) / (precision_clase + recall_clase)
+            if (precision_clase + recall_clase) > 0
+            else 0
+        )
+
+        metricas_por_clase[clase] = {
+            "Precision": precision_clase,
+            "Recall": recall_clase,
+            "F1-Score": f1_clase,
+        }
+
+    n_clases = len(clases_unicas)
+    macro_precision = (
+        sum(m["Precision"] for m in metricas_por_clase.values()) / n_clases
+    )
+    macro_recall = sum(m["Recall"] for m in metricas_por_clase.values()) / n_clases
+    macro_f1 = sum(m["F1-Score"] for m in metricas_por_clase.values()) / n_clases
+    aciertos = max_coincidencias / len(clases_reales)
+
+    return aciertos, macro_precision, macro_recall, macro_f1, asignaciones_traducidas
+
+
+def convertir_a_tabla(puntos_plot, asignaciones_reales, asignaciones_predichas):
+    datos_raw = []
+    for i, punto in enumerate(puntos_plot):
+        datos_raw.append(
+            {
+                "features": punto,
+                "class": asignaciones_reales[i],
+                "prediccion": asignaciones_predichas[i],
+            }
+        )
+    return datos_raw
+
 
 app = Flask(__name__)
 CORS(app)
 
-def distancia_euclidiana(p1, p2):
-    return math.sqrt(sum((p1[i] - p2[i]) ** 2 for i in range(len(p1))))
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 
-def media_lista(lista_de_listas):
-    if not lista_de_listas:
-        return []
-    dimension = len(lista_de_listas[0])
-    suma = [0] * dimension
-    for p in lista_de_listas:
-        for i in range(dimension):
-            suma[i] += p[i]
-    return [s / len(lista_de_listas) for s in suma]
-
-
-def k_means_manual(puntos, k, max_iter=100):
-    centroides = random.sample(puntos, k)
-    asignaciones = [-1] * len(puntos)
-
-    for _ in range(max_iter):
-        cambio = False
-        nuevos_clusters = [[] for _ in range(k)]
-
-        for i, punto in enumerate(puntos):
-            dists = [distancia_euclidiana(punto, c) for c in centroides]
-            cluster_id = dists.index(min(dists))
-
-            if asignaciones[i] != cluster_id:
-                asignaciones[i] = cluster_id
-                cambio = True
-
-            nuevos_clusters[cluster_id].append(punto)
-
-        for idx in range(k):
-            if nuevos_clusters[idx]:
-                centroides[idx] = media_lista(nuevos_clusters[idx])
-
-        if not cambio:
-            break
-
-    return asignaciones, centroides
-
-
-def evaluar_precision(asignaciones, etiquetas_reales, k):
-    mapa_cluster_etiqueta = {}
-
-    for cluster_id in range(k):
-        indices = [i for i, x in enumerate(asignaciones) if x == cluster_id]
-        if not indices:
-            continue
-
-        conteo_etiquetas = {}
-        for idx in indices:
-            lbl = etiquetas_reales[idx]
-            conteo_etiquetas[lbl] = conteo_etiquetas.get(lbl, 0) + 1
-
-        etiqueta_dominante = max(conteo_etiquetas, key=conteo_etiquetas.get)
-        mapa_cluster_etiqueta[cluster_id] = etiqueta_dominante
-
-    aciertos = 0
-    predicciones = []
-
-    for i, cluster_id in enumerate(asignaciones):
-        pred = mapa_cluster_etiqueta.get(cluster_id, "Desconocido")
-        predicciones.append(pred)
-        if pred == etiquetas_reales[i]:
-            aciertos += 1
-
-    precision = aciertos / len(etiquetas_reales)
-    return precision, predicciones, mapa_cluster_etiqueta
-
-
-@app.route('/api/upload-kmeans', methods=['POST'])
-def upload_file():
+@app.route("/api/upload-kmeans", methods=["POST"])
+def subir_archivo():
     try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
+        if "archivo" not in request.files:
+            return jsonify({"error": "No se proporciono un archivo"}), 400
 
-        file = request.files['file']
-        n_init = int(request.form.get('n_init', 10))
+        archivo = request.files["archivo"]
+        max_veces_raw = request.form.get("max_veces", "auto")
 
-        contenido = file.read().decode('utf-8').strip().split('\n')
+        if max_veces_raw.strip() == "" or max_veces_raw.strip().lower() == "auto":
+            max_veces = 999
+        else:
+            try:
+                max_veces = int(max_veces_raw)
+            except ValueError:
+                max_veces = 999
 
-        datos_raw = []
-        etiquetas = []
-        features_matrix = []
+        contenido = archivo.read().decode("utf-8").strip().split("\n")
+
+        puntos_plot = []
+        clases = []
 
         for linea in contenido:
-            partes = linea.strip().split(',')
-            if len(partes) < 2: continue
+            if not linea.strip():
+                continue
 
-            feats = [float(x) for x in partes[:-1]]
-            lbl = partes[-1].strip()
+            partes = linea.split(",")
+            if len(partes) < 3:
+                return jsonify(
+                    {
+                        "error": "Se requieren al menos 3 columnas (ej. Feature1, Feature2, Clase)"
+                    }
+                ), 400
 
-            features_matrix.append(feats)
-            etiquetas.append(lbl)
+            puntos_plot.append([float(x) for x in partes[:-1]])
+            clases.append(partes[-1].strip())
 
-            datos_raw.append({
-                'features': feats,
-                'class': lbl
-            })
+        k = len(set(clases))
 
-        num_features = len(features_matrix[0])
-        clases_unicas = list(set(etiquetas))
-        k = len(clases_unicas)
-
+        puntos_plot_pares, indices_pares = dividir_lista_en_pares(puntos_plot)
         resultados_analisis = []
 
-        for i in range(num_features):
-            for j in range(i + 1, num_features):
+        for index_par, puntos_plot_par in enumerate(puntos_plot_pares):
+            cols_comparadas = indices_pares[index_par]
 
-                puntos_2d = [[fila[i], fila[j]] for fila in features_matrix]
-                mejor_precision = -1
-                mejor_resultado = None
+            clusters = inicializar_centroides(puntos_plot_par, k)
+            lista_asignaciones = []
 
-                for _ in range(n_init):
-                    asignaciones, centroides = k_means_manual(puntos_2d, k)
-                    precision, preds, mapa = evaluar_precision(asignaciones, etiquetas, k)
+            for veces in itertools.count(1):
+                lista_asignaciones = sacar_distancias(puntos_plot_par, clusters)
+                lista_dividida = dividir_en_valor(lista_asignaciones)
+                centros_dict = calcular_centros(puntos_plot_par, lista_dividida, k)
 
-                    if precision > mejor_precision:
-                        mejor_precision = precision
-                        print(f"Asignaciones: {asignaciones}")
-                        mejor_resultado = {
-                            'indices_features': [i, j],
-                            'clases_unicas': len(clases_unicas),
-                            'nombres_features': [f'Feature {i + 1}', f'Feature {j + 1}'],
-                            'precision': precision,
-                            'centroides': centroides,
-                            'asignaciones': asignaciones,
-                            'predicciones': preds
-                        }
+                clusters_new = [centros_dict[i] for i in sorted(centros_dict.keys())]
 
-                resultados_analisis.append(mejor_resultado)
+                if veces >= max_veces:
+                    break
+                elif clusters_new != clusters:
+                    clusters = clusters_new
+                else:
+                    break
 
-        resultados_analisis.sort(key=lambda x: x['precision'], reverse=True)
+            aciertos, precision, recall, f1, asignaciones_traducidas = (
+                evaluar_rendimiento(lista_asignaciones, clases)
+            )
 
-        mejor_modelo = resultados_analisis[0]
-        for idx, row in enumerate(datos_raw):
-            row['prediccion_kmeans'] = mejor_modelo['predicciones'][idx]
+            resultados_analisis.append(
+                {
+                    "indices_features": cols_comparadas,
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1,
+                    "aciertos": aciertos,
+                    "centroides": clusters,
+                    "asignaciones": lista_asignaciones,
+                    "asignaciones_traducidas": asignaciones_traducidas,
+                    "iteraciones": veces,
+                }
+            )
 
-        print(datos_raw)
+        resultados_analisis.sort(key=lambda x: x["f1"], reverse=True)
 
-        return jsonify({
-            'total_samples': len(datos_raw),
-            'ranking': resultados_analisis,
-            'table_data': datos_raw
-        })
+        mejor_resultado = resultados_analisis[0]
+        datos_tabla = convertir_a_tabla(
+            puntos_plot, clases, mejor_resultado["asignaciones_traducidas"]
+        )
+
+        return jsonify(
+            {
+                "numero_muestras": len(puntos_plot),
+                "resultados": resultados_analisis,
+                "datos_tabla": datos_tabla,
+                "mejores_caracteristicas": mejor_resultado["indices_features"],
+            }
+        )
 
     except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error al procesar el archivo: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True, port=5000)

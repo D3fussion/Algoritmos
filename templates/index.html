@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="es-MX" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero K-Means Dinámico</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-stone-50 min-h-screen p-4 md:p-8">
+
+    <main class="max-w-7xl mx-auto space-y-8">
+
+        <header class="text-center my-5">
+            <h1 class="text-4xl font-bold text-neutral">Análisis de Combinaciones K-Means</h1>
+            <p class="py-2 text-base-content/70">Sube tu dataset para encontrar el mejor par de atributos.</p>
+        </header>
+
+        <section aria-label="Configuración del análisis" class="card bg-base-100 shadow border border-stone-200">
+            <div class="card-body">
+                <form class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end" onsubmit="event.preventDefault(); procesarDatos()">
+                    <div class="form-control w-full">
+                        <label class="label" for="fileInput"><span class="label-text">Archivo de Datos (.csv, .txt, .data)</span></label>
+                        <input type="file" id="fileInput" class="file-input file-input-bordered w-full"
+                            accept=".csv, .txt, .data" />
+                    </div>
+                    <div class="form-control w-full flex flex-col">
+                        <label class="label" for="nInitInput"><span class="label-text">Máximas Iteraciones (Puedes ingresar "auto")</span></label>
+                        <div class="flex flex-row gap-6">
+                            <input type="number" id="nInitInput" class="input input-bordered flex-1" value="10" min="1"
+                            max="999" />
+                            <label class="label cursor-pointer gap-2 w-fit" for="autoK">
+                                <input type="checkbox" id="autoK" class="checkbox" />
+                                <span class="label-text">Auto</span>
+                            </label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-neutral w-full">
+                        <span id="btnText">Analizar Combinaciones</span>
+                        <span id="loadingSpinner" class="loading loading-spinner loading-sm hidden" aria-hidden="true"></span>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section id="resultsSection" aria-label="Resultados del análisis" class="hidden space-y-8">
+
+            <div class="stats shadow w-full bg-white border border-stone-200" role="region" aria-label="Resumen de métricas">
+                <div class="stat">
+                    <div class="stat-title">Mejor Exactitud (F1-Score)</div>
+                    <div class="stat-value text-primary" id="bestAcc">0%</div>
+                    <div class="stat-desc" id="bestPairName">Par: -</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Total Muestras</div>
+                    <div class="stat-value text-secondary" id="totalSamples">0</div>
+                </div>
+            </div>
+
+            <section aria-label="Ranking de pares de atributos">
+                <h2 class="text-2xl font-bold mb-4">Ranking de Pares (Features)</h2>
+                <div id="chartsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                </div>
+            </section>
+
+            <section aria-label="Detalle de predicciones" class="card bg-base-100 shadow border border-stone-200">
+                <div class="card-body">
+                    <header class="flex justify-between items-center mb-2">
+                        <h2 class="card-title m-0">Detalle de Predicciones (Mejor Modelo)</h2>
+                        <button type="button" class="btn btn-sm btn-success text-white" onclick="exportarCSV()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Exportar CSV
+                        </button>
+                    </header>
+                    <div class="overflow-x-auto h-96">
+                        <table class="table table-zebra table-pin-rows table-xs">
+                            <caption class="sr-only">Predicciones del mejor modelo K-Means</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Features (Todas)</th>
+                                    <th scope="col">Clase Real</th>
+                                    <th scope="col">Predicción</th>
+                                    <th scope="col">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </section>
+
+    </main>
+
+    <template id="cardGrafica">
+        <article class="card bg-base-100 shadow border border-stone-200 overflow-hidden">
+            <div class="card-body p-4">
+                <header class="flex justify-between items-center mb-4">
+                    <h3 class="card-title text-base font-bold titulo"></h3>
+                    <div class="badge badge-neutral badge-outline iteraciones text-xs"></div>
+                </header>
+
+                <dl class="grid grid-cols-4 gap-2 mb-4 text-xs">
+                    <div class="bg-base-200 p-2 rounded text-center shadow-sm border border-stone-300">
+                        <dt class="block font-semibold text-base-content/70">F1-Score</dt>
+                        <dd class="font-bold metric-f1 text-primary text-sm"></dd>
+                    </div>
+                    <div class="bg-base-200 p-2 rounded text-center">
+                        <dt class="block font-semibold text-base-content/70">Aciertos</dt>
+                        <dd class="font-bold metric-acc"></dd>
+                    </div>
+                    <div class="bg-base-200 p-2 rounded text-center">
+                        <dt class="block font-semibold text-base-content/70">Precisión</dt>
+                        <dd class="font-bold metric-prec"></dd>
+                    </div>
+                    <div class="bg-base-200 p-2 rounded text-center">
+                        <dt class="block font-semibold text-base-content/70">Recall</dt>
+                        <dd class="font-bold metric-rec"></dd>
+                    </div>
+                </dl>
+
+                <figure class="w-full h-fit">
+                    <canvas class="grafica" role="img" aria-label="Gráfica de dispersión por clusters"></canvas>
+                </figure>
+            </div>
+        </article>
+    </template>
+
+    <script>
+
+        let datosTablaGlobal = [];
+
+        document.getElementById('autoK').addEventListener('change', function () {
+            const nInitInput = document.getElementById('nInitInput');
+            nInitInput.disabled = this.checked;
+            nInitInput.classList.toggle('opacity-50', this.checked);
+            nInitInput.classList.toggle('cursor-not-allowed', this.checked);
+        });
+
+        function generarColores(numeroDeColores) {
+            const coloresBase = [
+                '#37a2eb',
+                '#ff6384',
+                '#4cbfc0',
+                '#fe9f40',
+                '#9966ff',
+                '#ffcd56',
+                '#c9cbce'
+            ];
+
+            const colores = [];
+
+            for (let i = 0; i < numeroDeColores; i++) {
+                if (i < coloresBase.length) {
+                    colores.push(coloresBase[i]);
+                } else {
+                    const hue = Math.floor(Math.random() * 360);
+                    const saturation = Math.floor(Math.random() * 20) + 60;
+                    const lightness = Math.floor(Math.random() * 15) + 60;
+
+                    colores.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+                }
+            }
+
+            return colores;
+        }
+
+        async function procesarDatos() {
+            const fileInput = document.getElementById('fileInput');
+            const nInitInput = document.getElementById('nInitInput');
+            const spinner = document.getElementById('loadingSpinner');
+            const resultsSection = document.getElementById('resultsSection');
+            const chartsContainer = document.getElementById('chartsContainer');
+
+            if (fileInput.files.length === 0) { alert("Selecciona un archivo"); return; }
+
+            spinner.classList.remove('hidden');
+            chartsContainer.innerHTML = '';
+
+            const autoK = document.getElementById('autoK');
+            const formData = new FormData();
+            formData.append('archivo', fileInput.files[0]);
+            formData.append('max_veces', autoK.checked ? 'auto' : nInitInput.value);
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/upload-kmeans', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                resultsSection.classList.remove('hidden');
+
+                const bestResult = data.resultados[0];
+                document.getElementById('bestAcc').innerText = (bestResult.aciertos * 100).toFixed(1) + "%";
+                document.getElementById('bestPairName').innerText = `Cols: ${bestResult.indices_features[0] + 1} vs ${bestResult.indices_features[1] + 1}`;
+                
+                document.getElementById('totalSamples').innerText = data.numero_muestras;
+
+                const numClases = bestResult.centroides.length;
+                const colores = generarColores(numClases);
+
+                data.resultados.forEach((res, index) => {
+                    crearTarjetaGrafica(res, index, data.datos_tabla, data.resultados, numClases, colores);
+                });
+
+                datosTablaGlobal = data.datos_tabla;
+                renderizarTabla(data.datos_tabla);
+
+            } catch (error) {
+                alert("Error: " + error.message);
+                console.error(error);
+            } finally {
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function dividirPuntosPorClase(featureIdx1, featureIdx2, allData, rankingItem, clasesUnicas, colores) {
+            let datasets = [];
+
+            const centroidesFormateados = rankingItem.centroides.map(centroide => {
+                return {
+                    x: centroide[0],
+                    y: centroide[1]
+                };
+            });
+
+            datasets.push({
+                label: "Centroides",
+                data: centroidesFormateados,
+                backgroundColor: "#000000",
+                pointStyle: 'crossRot',
+                pointRadius: 8,
+                borderWidth: 3,
+                borderColor: "#000000"
+            });
+
+            let clusters = {};
+
+            allData.forEach((punto, index) => {
+                let clusterId = rankingItem.asignaciones[index];
+                let nombreReal = rankingItem.asignaciones_traducidas[index];
+
+                if (!clusters[clusterId]) {
+                    clusters[clusterId] = {
+                        nombre: nombreReal,
+                        puntos: []
+                    };
+                }
+
+                clusters[clusterId].puntos.push({
+                    x: punto.features[featureIdx1],
+                    y: punto.features[featureIdx2],
+                });
+            });
+
+            Object.keys(clusters).forEach((clusterId) => {
+                datasets.push({
+                    label: clusters[clusterId].nombre,
+                    data: clusters[clusterId].puntos,
+                    backgroundColor: colores[clusterId],
+                    pointRadius: 4
+                });
+            });
+
+            return datasets;
+        }
+        function crearTarjetaGrafica(resultado, index, allData, ranking, clasesUnicas, colores) {
+            const container = document.getElementById('chartsContainer');
+            const template = document.getElementById('cardGrafica').content.cloneNode(true);
+
+            const featureIdx1 = resultado.indices_features[0];
+            const featureIdx2 = resultado.indices_features[1];
+
+            template.querySelector('.titulo').innerText = `#${index + 1} - Atributos ${featureIdx1 + 1} vs ${featureIdx2 + 1}`;
+            template.querySelector('.iteraciones').innerText = `${resultado.iteraciones} Iteraciones`;
+            
+            template.querySelector('.metric-acc').innerText = `${(resultado.aciertos * 100).toFixed(1)}%`;
+            template.querySelector('.metric-f1').innerText = `${(resultado.f1 * 100).toFixed(1)}%`;
+            template.querySelector('.metric-prec').innerText = `${(resultado.precision * 100).toFixed(1)}%`;
+            template.querySelector('.metric-rec').innerText = `${(resultado.recall * 100).toFixed(1)}%`;
+
+            const ctx = template.querySelector('.grafica');
+
+            const puntos = dividirPuntosPorClase(featureIdx1, featureIdx2, allData, ranking[index], clasesUnicas, colores);
+
+            container.appendChild(template);
+
+            new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: puntos
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom'
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderizarTabla(dataSet) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            dataSet.forEach((row, index) => {
+                const isCorrect = row['class'] === row['prediccion'];
+                const badge = isCorrect
+                    ? '<span class="badge badge-success badge-xs text-white">OK</span>'
+                    : '<span class="badge badge-error badge-xs text-white">X</span>';
+
+                const tr = `
+                    <tr>
+                        <th>${index + 1}</th>
+                        <td class="font-mono text-xs">[${row.features.join(', ')}]</td>
+                        <td>${row['class']}</td>
+                        <td class="font-bold ${isCorrect ? 'text-success' : 'text-error'}">${row['prediccion']}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+        }
+
+        function exportarCSV() {
+            if (!datosTablaGlobal || datosTablaGlobal.length === 0) {
+                alert("No hay datos para exportar. Analiza un archivo primero.");
+                return;
+            }
+
+            let csvContent = "Numero,Features,Clase Real,Prediccion,Estado\n";
+
+            datosTablaGlobal.forEach((row, index) => {
+                const numero = index + 1;
+                const features = `"${row.features.join(', ')}"`; 
+                const claseReal = row['class'];
+                const prediccion = row['prediccion'];
+                const estado = (claseReal === prediccion) ? "Correcto" : "Incorrecto";
+                
+                csvContent += `${numero},${features},${claseReal},${prediccion},${estado}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", "predicciones_kmeans_mejor_modelo.csv");
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+
+</html>
