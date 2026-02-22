@@ -5,8 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tablero K-Means Dinámico</title>
+    <!-- DaisyUI: librería de componentes UI sobre Tailwind -->
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <!-- Tailwind CSS: utilidades de estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js: librería para renderizar las gráficas -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
@@ -14,44 +17,63 @@
 
     <main class="max-w-7xl mx-auto space-y-8">
 
+        <!-- ── Encabezado principal ─────────────────────────────────── -->
         <header class="text-center my-5">
             <h1 class="text-4xl font-bold text-neutral">Análisis de Combinaciones K-Means</h1>
             <p class="py-2 text-base-content/70">Sube tu dataset para encontrar el mejor par de atributos.</p>
         </header>
 
+        <!-- ── Sección de configuración: carga del archivo y parámetros ─ -->
         <section aria-label="Configuración del análisis" class="card bg-base-100 shadow border border-stone-200">
             <div class="card-body">
-                <form class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end" onsubmit="event.preventDefault(); procesarDatos()">
+                <!-- El formulario llama a procesarDatos() al hacer submit -->
+                <form class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end"
+                    onsubmit="event.preventDefault(); procesarDatos()">
+
+                    <!-- Input para seleccionar el archivo de datos -->
                     <div class="form-control w-full">
-                        <label class="label" for="fileInput"><span class="label-text">Archivo de Datos (.csv, .txt, .data)</span></label>
+                        <label class="label" for="fileInput"><span class="label-text">Archivo de Datos (.csv, .txt,
+                                .data)</span></label>
                         <input type="file" id="fileInput" class="file-input file-input-bordered w-full"
                             accept=".csv, .txt, .data" />
                     </div>
+
+                    <!-- Input numérico y checkbox por si se quiere que las iteraciones sean automáticas -->
                     <div class="form-control w-full flex flex-col">
-                        <label class="label" for="nInitInput"><span class="label-text">Máximas Iteraciones (Puedes ingresar "auto")</span></label>
+                        <label class="label" for="nInitInput"><span class="label-text">Máximas Iteraciones (Puedes
+                                ingresar "auto")</span></label>
                         <div class="flex flex-row gap-6">
+                            <!-- Número de iteraciones (se desactiva si "Auto" está marcado) -->
                             <input type="number" id="nInitInput" class="input input-bordered flex-1" value="10" min="1"
-                            max="999" />
+                                max="999" />
+                            <!-- Checkbox "Auto": cuando está activo, manda 999 iteraciones al backend -->
                             <label class="label cursor-pointer gap-2 w-fit" for="autoK">
                                 <input type="checkbox" id="autoK" class="checkbox" />
                                 <span class="label-text">Auto</span>
                             </label>
                         </div>
                     </div>
+
+                    <!-- Botón de envío -->
                     <button type="submit" class="btn btn-neutral w-full">
                         <span id="btnText">Analizar Combinaciones</span>
-                        <span id="loadingSpinner" class="loading loading-spinner loading-sm hidden" aria-hidden="true"></span>
+                        <span id="loadingSpinner" class="loading loading-spinner loading-sm hidden"
+                            aria-hidden="true"></span>
                     </button>
                 </form>
             </div>
         </section>
 
+        <!-- ── Sección de resultados (oculta hasta que se procesa el archivo) ─ -->
         <section id="resultsSection" aria-label="Resultados del análisis" class="hidden space-y-8">
 
-            <div class="stats shadow w-full bg-white border border-stone-200" role="region" aria-label="Resumen de métricas">
+            <!-- Tarjetas resumen con el mejor F1 y el total de muestras -->
+            <div class="stats shadow w-full bg-white border border-stone-200" role="region"
+                aria-label="Resumen de métricas">
                 <div class="stat">
                     <div class="stat-title">Mejor Exactitud (F1-Score)</div>
                     <div class="stat-value text-primary" id="bestAcc">0%</div>
+                    <!-- Muestra qué columnas forman el mejor par -->
                     <div class="stat-desc" id="bestPairName">Par: -</div>
                 </div>
                 <div class="stat">
@@ -60,18 +82,26 @@
                 </div>
             </div>
 
+            <!-- Ranking de pares de features con sus gráficas de dispersión -->
             <section aria-label="Ranking de pares de atributos">
                 <h2 class="text-2xl font-bold mb-4">Ranking de Pares (Features)</h2>
+                <!-- Las tarjetas con gráficas se insertan con Javascript -->
                 <div id="chartsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 </div>
             </section>
 
+            <!-- Tabla con las predicciones del mejor modelo -->
             <section aria-label="Detalle de predicciones" class="card bg-base-100 shadow border border-stone-200">
                 <div class="card-body">
                     <header class="flex justify-between items-center mb-2">
                         <h2 class="card-title m-0">Detalle de Predicciones (Mejor Modelo)</h2>
+                        <!-- Botón para exportar los datos de la tabla a un archivo CSV -->
                         <button type="button" class="btn btn-sm btn-success text-white" onclick="exportarCSV()">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
                             Exportar CSV
                         </button>
                     </header>
@@ -87,6 +117,7 @@
                                     <th scope="col">Estado</th>
                                 </tr>
                             </thead>
+                            <!-- Las filas se generan dinámicamente desde JS con renderizarTabla() -->
                             <tbody id="tableBody"></tbody>
                         </table>
                     </div>
@@ -97,14 +128,19 @@
 
     </main>
 
+    <!-- Template HTML para cada tarjeta de gráfica -->
+    <!-- Se usa <template> para que el navegador no lo renderice hasta que se clone -->
     <template id="cardGrafica">
         <article class="card bg-base-100 shadow border border-stone-200 overflow-hidden">
             <div class="card-body p-4">
                 <header class="flex justify-between items-center mb-4">
+                    <!-- Título del par (Ejemplo: "#1 - Atributos 1 vs 3") -->
                     <h3 class="card-title text-base font-bold titulo"></h3>
+                    <!-- Badge con el número de iteraciones que tomó hacer que los centroides dejaran de moverse -->
                     <div class="badge badge-neutral badge-outline iteraciones text-xs"></div>
                 </header>
 
+                <!-- Métricas del par: F1, Aciertos, Precisión y Recall -->
                 <dl class="grid grid-cols-4 gap-2 mb-4 text-xs">
                     <div class="bg-base-200 p-2 rounded text-center shadow-sm border border-stone-300">
                         <dt class="block font-semibold text-base-content/70">F1-Score</dt>
@@ -124,6 +160,7 @@
                     </div>
                 </dl>
 
+                <!-- Canvas donde Chart.js dibuja la gráfica de dispersión -->
                 <figure class="w-full h-fit">
                     <canvas class="grafica" role="img" aria-label="Gráfica de dispersión por clusters"></canvas>
                 </figure>
@@ -133,8 +170,10 @@
 
     <script>
 
+        // Variable para guardar los datos de la tabla y poder exportarlos
         let datosTablaGlobal = [];
 
+        // Cuando el checkbox "Auto" cambia, desactiva o activa el input de iteraciones
         document.getElementById('autoK').addEventListener('change', function () {
             const nInitInput = document.getElementById('nInitInput');
             nInitInput.disabled = this.checked;
@@ -142,6 +181,10 @@
             nInitInput.classList.toggle('cursor-not-allowed', this.checked);
         });
 
+        /**
+         * Genera una paleta de colores para los clusters.
+         * Usa colores base predefinidos y genera colores HSL aleatorios si hay más clusters.
+         */
         function generarColores(numeroDeColores) {
             const coloresBase = [
                 '#37a2eb',
@@ -157,8 +200,11 @@
 
             for (let i = 0; i < numeroDeColores; i++) {
                 if (i < coloresBase.length) {
+                    // Usar colores predefinidos si hay suficientes
+                    // Estos colores son los bases de ChartJS, solamente los copié de su página
                     colores.push(coloresBase[i]);
                 } else {
+                    // Generar colores HSL aleatorios para los clusters adicionales
                     const hue = Math.floor(Math.random() * 360);
                     const saturation = Math.floor(Math.random() * 20) + 60;
                     const lightness = Math.floor(Math.random() * 15) + 60;
@@ -170,6 +216,10 @@
             return colores;
         }
 
+        /**
+         * Función principal que se llama al enviar el formulario.
+         * Lee el archivo, llama al endpoint del backend y renderiza los resultados.
+         */
         async function procesarDatos() {
             const fileInput = document.getElementById('fileInput');
             const nInitInput = document.getElementById('nInitInput');
@@ -182,12 +232,14 @@
             spinner.classList.remove('hidden');
             chartsContainer.innerHTML = '';
 
+            // Arma el FormData con el archivo y el número de iteraciones
             const autoK = document.getElementById('autoK');
             const formData = new FormData();
             formData.append('archivo', fileInput.files[0]);
             formData.append('max_veces', autoK.checked ? 'auto' : nInitInput.value);
 
             try {
+                // Envia el archivo al backend y espera la respuesta JSON
                 const response = await fetch('http://127.0.0.1:5000/api/upload-kmeans', {
                     method: 'POST',
                     body: formData
@@ -196,21 +248,26 @@
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
+                // Muestra la sección de resultados
                 resultsSection.classList.remove('hidden');
 
+                // Actualiza las tarjetas de resumen con el mejor resultado (primer elemento, ya viene ordenado por F1)
                 const bestResult = data.resultados[0];
                 document.getElementById('bestAcc').innerText = (bestResult.aciertos * 100).toFixed(1) + "%";
                 document.getElementById('bestPairName').innerText = `Cols: ${bestResult.indices_features[0] + 1} vs ${bestResult.indices_features[1] + 1}`;
-                
+
                 document.getElementById('totalSamples').innerText = data.numero_muestras;
 
+                // Genera una paleta de colores según el número de clases
                 const numClases = bestResult.centroides.length;
                 const colores = generarColores(numClases);
 
+                // Crea una tarjeta con gráfica para cada par de features analizado
                 data.resultados.forEach((res, index) => {
                     crearTarjetaGrafica(res, index, data.datos_tabla, data.resultados, numClases, colores);
                 });
 
+                // Guarda los datos de la tabla globalmente para poder exportarlos
                 datosTablaGlobal = data.datos_tabla;
                 renderizarTabla(data.datos_tabla);
 
@@ -222,9 +279,14 @@
             }
         }
 
+        /**
+         * Organiza los puntos del dataset en datasets de Chart.js, separados por cluster.
+         * También agrega los centroides como un dataset especial (con forma de 'x' para distinguirse).
+         */
         function dividirPuntosPorClase(featureIdx1, featureIdx2, allData, rankingItem, clasesUnicas, colores) {
             let datasets = [];
 
+            // Formatea los centroides al formato {x, y} que pide Chart.js
             const centroidesFormateados = rankingItem.centroides.map(centroide => {
                 return {
                     x: centroide[0],
@@ -232,6 +294,7 @@
                 };
             });
 
+            // Dataset especial para los centroides
             datasets.push({
                 label: "Centroides",
                 data: centroidesFormateados,
@@ -242,12 +305,14 @@
                 borderColor: "#000000"
             });
 
+            // Agrupa los puntos por su cluster asignado
             let clusters = {};
 
             allData.forEach((punto, index) => {
                 let clusterId = rankingItem.asignaciones[index];
                 let nombreReal = rankingItem.asignaciones_traducidas[index];
 
+                // Inicializa el cluster si es la primera vez que aparece
                 if (!clusters[clusterId]) {
                     clusters[clusterId] = {
                         nombre: nombreReal,
@@ -255,12 +320,14 @@
                     };
                 }
 
+                // Extrae solo las 2 features del par actual
                 clusters[clusterId].puntos.push({
                     x: punto.features[featureIdx1],
                     y: punto.features[featureIdx2],
                 });
             });
 
+            // Convierte cada cluster en un dataset de Chart.js con su color correspondiente
             Object.keys(clusters).forEach((clusterId) => {
                 datasets.push({
                     label: clusters[clusterId].nombre,
@@ -272,16 +339,24 @@
 
             return datasets;
         }
+
+        /**
+         * Clona el template HTML de tarjeta, rellena sus datos y crea la gráfica
+         * con Chart.js, luego lo agrega al contenedor de gráficas.
+         */
         function crearTarjetaGrafica(resultado, index, allData, ranking, clasesUnicas, colores) {
             const container = document.getElementById('chartsContainer');
+            // Clona el template para no modificar el original
             const template = document.getElementById('cardGrafica').content.cloneNode(true);
 
             const featureIdx1 = resultado.indices_features[0];
             const featureIdx2 = resultado.indices_features[1];
 
+            // Pone el título y el número de iteraciones
             template.querySelector('.titulo').innerText = `#${index + 1} - Atributos ${featureIdx1 + 1} vs ${featureIdx2 + 1}`;
             template.querySelector('.iteraciones').innerText = `${resultado.iteraciones} Iteraciones`;
-            
+
+            // Pone las métricas
             template.querySelector('.metric-acc').innerText = `${(resultado.aciertos * 100).toFixed(1)}%`;
             template.querySelector('.metric-f1').innerText = `${(resultado.f1 * 100).toFixed(1)}%`;
             template.querySelector('.metric-prec').innerText = `${(resultado.precision * 100).toFixed(1)}%`;
@@ -289,10 +364,13 @@
 
             const ctx = template.querySelector('.grafica');
 
+            // Prepara los datasets divididos por cluster para esta gráfica
             const puntos = dividirPuntosPorClase(featureIdx1, featureIdx2, allData, ranking[index], clasesUnicas, colores);
 
+            // Inserta el template en el DOM antes de crear el chart, sino falla al dibujar
             container.appendChild(template);
 
+            // Crea la gráfica de dispersión con Chart.js
             new Chart(ctx, {
                 type: 'scatter',
                 data: {
@@ -318,12 +396,19 @@
             });
         }
 
+        /**
+         * Genera las filas de la tabla de predicciones en el DOM.
+         * Marca cada fila como correcta (verde) o incorrecta (rojo) según si la
+         * predicción coincide con la clase real.
+         * Se usa la predicción con mejor F1-Score.
+         */
         function renderizarTabla(dataSet) {
             const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '';
+            tbody.innerHTML = ''; // Limpia filas anteriores
 
             dataSet.forEach((row, index) => {
                 const isCorrect = row['class'] === row['prediccion'];
+                // Badge verde si es correcto, rojo si no
                 const badge = isCorrect
                     ? '<span class="badge badge-success badge-xs text-white">OK</span>'
                     : '<span class="badge badge-error badge-xs text-white">X</span>';
@@ -341,32 +426,39 @@
             });
         }
 
+        /**
+         * Exporta los datos de la tabla global a un archivo .csv y lo descarga.
+         * Usa un enlace oculto para disparar la descarga en el navegador.
+         */
         function exportarCSV() {
             if (!datosTablaGlobal || datosTablaGlobal.length === 0) {
                 alert("No hay datos para exportar. Analiza un archivo primero.");
                 return;
             }
 
+            // Encabezado del CSV
             let csvContent = "Numero,Features,Clase Real,Prediccion,Estado\n";
 
             datosTablaGlobal.forEach((row, index) => {
                 const numero = index + 1;
-                const features = `"${row.features.join(', ')}"`; 
+                const features = `"${row.features.join(', ')}"`;  // Entre comillas para que la coma no rompa el CSV
                 const claseReal = row['class'];
                 const prediccion = row['prediccion'];
                 const estado = (claseReal === prediccion) ? "Correcto" : "Incorrecto";
-                
+
                 csvContent += `${numero},${features},${claseReal},${prediccion},${estado}\n`;
             });
 
+            // Crea un Blob con el contenido y genera una URL temporal para descargar
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
-            
+
             link.setAttribute("href", url);
             link.setAttribute("download", "predicciones_kmeans_mejor_modelo.csv");
             link.style.visibility = 'hidden';
-            
+
+            // Agrega el enlace al DOM, hace click y lo elimina inmediatamente
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
